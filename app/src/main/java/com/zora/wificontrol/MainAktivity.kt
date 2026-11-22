@@ -2,354 +2,247 @@
 package com.zora.wificontrol
 
 import android.content.Context
-import android.content.Intent
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
+import android.net.wifi.WifiManager
 import android.os.Bundle
-import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import java.net.Inet4Address
+import java.net.InetAddress
 
-private val Bg = Color(0xFF080812)
-private val Panel = Color(0xFF171629)
-private val Purple = Color(0xFF8B5CF6)
-private val Muted = Color(0xFFAAA7C7)
-private val Green = Color(0xFF35D49A)
+private val Dark = Color(0xFF10141D)
+private val Panel = Color(0xFF1B2230)
+private val Blue = Color(0xFF4388FF)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { ZoraApp() }
+        setContent {
+            MaterialTheme(
+                colorScheme = darkColorScheme(
+                    primary = Blue,
+                    background = Dark,
+                    surface = Panel
+                )
+            ) {
+                ZoraApp(this)
+            }
+        }
     }
 }
 
 @Composable
-fun ZoraApp() {
-    val context = LocalContext.current
+fun ZoraApp(context: Context) {
+    var page by remember { mutableStateOf("Dashboard") }
+    var ssid by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var filterEnabled by remember { mutableStateOf(false) }
+    var filterMode by remember { mutableStateOf("Blacklist") }
 
-    var gateway by remember {
-        mutableStateOf(readGateway(context))
+    val gateway = remember {
+        try {
+            val wifi = context.applicationContext
+                .getSystemService(Context.WIFI_SERVICE) as WifiManager
+            val ip = wifi.dhcpInfo.gateway
+            if (ip == 0) "Tidak terdeteksi"
+            else InetAddress.getByAddress(
+                byteArrayOf(
+                    ip.toByte(),
+                    (ip shr 8).toByte(),
+                    (ip shr 16).toByte(),
+                    (ip shr 24).toByte()
+                )
+            ).hostAddress ?: "Tidak terdeteksi"
+        } catch (_: Exception) {
+            "Tidak terdeteksi"
+        }
     }
 
-    var wifiConnected by remember {
-        mutableStateOf(isWifiConnected(context))
-    }
-
-    MaterialTheme(
-        colorScheme = darkColorScheme(
-            primary = Purple,
-            background = Bg,
-            surface = Panel,
-            onSurface = Color.White
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(Dark)
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp)
+    ) {
+        Text(
+            "ZORA",
+            color = Color.White,
+            fontSize = 28.sp
         )
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = Bg
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
+        Text(
+            "WIFI CONTROL / ZTE F460",
+            color = Blue,
+            fontSize = 12.sp
+        )
 
-                // HEADER
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            "ZORA",
-                            fontSize = 29.sp,
-                            fontWeight = FontWeight.Black
-                        )
-                        Text(
-                            "WIFI CONTROL / ZTE F460",
-                            color = Muted,
-                            fontSize = 11.sp,
-                            letterSpacing = 1.5.sp
-                        )
-                    }
+        Spacer(Modifier.height(24.dp))
 
-                    Icon(
-                        Icons.Default.Wifi,
-                        contentDescription = null,
-                        tint = Purple,
-                        modifier = Modifier.size(36.dp)
+        Text(
+            page.uppercase(),
+            color = Color.White,
+            fontSize = 22.sp
+        )
+
+        Spacer(Modifier.height(16.dp))
+
+        when (page) {
+            "Dashboard" -> {
+                PanelCard("ROUTER GATEWAY", gateway)
+                PanelCard("ROUTER MODEL", "ZTE F460")
+                PanelCard("CONNECTION", "Periksa koneksi WiFi HP")
+                PanelCard("MANAGEMENT", "Panel kontrol router")
+            }
+
+            "WiFi Settings" -> {
+                PanelCard("SSID / NAMA WIFI", "Pengaturan nama jaringan")
+
+                OutlinedTextField(
+                    value = ssid,
+                    onValueChange = { ssid = it },
+                    label = { Text("Nama WiFi baru") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Password WiFi baru") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                Text(
+                    "Form ini belum mengirim perubahan ke router.",
+                    color = Color.LightGray,
+                    fontSize = 12.sp
+                )
+            }
+
+            "MAC Filter" -> {
+                PanelCard("DEVICE ACCESS CONTROL", "Pengaturan filter perangkat")
+
+                Row {
+                    Text(
+                        "Aktifkan MAC Filter",
+                        color = Color.White,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = filterEnabled,
+                        onCheckedChange = { filterEnabled = it }
                     )
                 }
 
-                // ROUTER STATUS
-                Card(
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Panel
-                    )
-                ) {
-                    Column(
-                        Modifier.padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(13.dp)
+                Spacer(Modifier.height(16.dp))
+
+                Text("Mode filter", color = Color.White)
+
+                listOf("Blacklist", "Whitelist").forEach { mode ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { filterMode = mode }
+                            .padding(12.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Default.Router,
-                                contentDescription = null,
-                                tint = Purple,
-                                modifier = Modifier.size(35.dp)
-                            )
-
-                            Spacer(Modifier.width(12.dp))
-
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    "ZTE F460",
-                                    fontSize = 19.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-
-                                Text(
-                                    if (wifiConnected)
-                                        "Terhubung ke WiFi"
-                                    else
-                                        "WiFi tidak terdeteksi",
-                                    color = Muted,
-                                    fontSize = 12.sp
-                                )
-                            }
-
-                            Text(
-                                if (wifiConnected) "ONLINE" else "OFFLINE",
-                                color = if (wifiConnected) Green else Color.Red,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-
-                        HorizontalDivider(
-                            color = Color(0xFF302C48)
+                        RadioButton(
+                            selected = filterMode == mode,
+                            onClick = { filterMode = mode }
                         )
-
                         Text(
-                            "GATEWAY ROUTER",
-                            color = Muted,
-                            fontSize = 11.sp
+                            mode,
+                            color = Color.White,
+                            modifier = Modifier.padding(top = 12.dp)
                         )
-
-                        Text(
-                            gateway ?: "Tidak ditemukan",
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-
-                        Button(
-                            onClick = {
-                                openRouter(context, gateway)
-                            },
-                            enabled = gateway != null,
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Purple
-                            ),
-                            shape = RoundedCornerShape(14.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.OpenInBrowser,
-                                contentDescription = null
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text("BUKA ADMIN ROUTER")
-                        }
                     }
                 }
 
                 Text(
-                    "NETWORK MANAGEMENT",
-                    color = Muted,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.5.sp
+                    "Pengaturan ini masih berupa tampilan. " +
+                    "Belum mengubah konfigurasi router.",
+                    color = Color.LightGray,
+                    fontSize = 12.sp
                 )
+            }
 
-                FeatureCard(
-                    Icons.Default.Devices,
-                    "Connected Devices",
-                    "Buka menu perangkat terhubung pada router untuk melihat daftar perangkat."
+            "Security" -> {
+                PanelCard(
+                    "ROUTER SECURITY",
+                    "Pengaturan keamanan jaringan"
                 )
-
-                FeatureCard(
-                    Icons.Default.Block,
-                    "Block / Unblock Device",
-                    "Kelola daftar perangkat melalui fitur MAC Filter jika tersedia pada firmware."
+                PanelCard(
+                    "MAC FILTER",
+                    "Kelola akses perangkat setelah integrasi tersedia"
                 )
+            }
 
-                FeatureCard(
-                    Icons.Default.Lock,
-                    "WiFi Password",
-                    "Buka pengaturan WLAN untuk mengganti password WiFi."
+            "Admin" -> {
+                PanelCard(
+                    "ADMIN PANEL",
+                    "Pengaturan aplikasi ZORA WIFI CONTROL"
                 )
-
-                FeatureCard(
-                    Icons.Default.Settings,
-                    "SSID Settings",
-                    "Atur nama jaringan WiFi melalui konfigurasi resmi router."
+                Text(
+                    "Jangan simpan password router secara langsung " +
+                    "di dalam source code.",
+                    color = Color.LightGray,
+                    fontSize = 13.sp
                 )
+            }
+        }
 
-                OutlinedButton(
-                    onClick = {
-                        gateway = readGateway(context)
-                        wifiConnected = isWifiConnected(context)
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Refresh,
-                        contentDescription = null
+        Spacer(Modifier.height(24.dp))
+
+        Text("MENU", color = Blue, fontSize = 12.sp)
+
+        listOf(
+            "Dashboard",
+            "WiFi Settings",
+            "MAC Filter",
+            "Security",
+            "Admin"
+        ).forEach { item ->
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 5.dp)
+                    .background(
+                        if (page == item) Blue.copy(alpha = 0.2f)
+                        else Panel,
+                        RoundedCornerShape(12.dp)
                     )
-                    Spacer(Modifier.width(8.dp))
-                    Text("REFRESH STATUS")
-                }
-
-                Text(
-                    "Pengaturan router memerlukan akun administrator " +
-                    "dan dukungan firmware ZTE F460. Perubahan dilakukan " +
-                    "melalui halaman resmi router.",
-                    color = Muted,
-                    fontSize = 11.sp,
-                    lineHeight = 17.sp
-                )
-
-                Text(
-                    "ZORA WIFI CONTROL • VERSION 1.0",
-                    color = Muted,
-                    fontSize = 10.sp,
-                    modifier = Modifier.align(Alignment.CenterHorizontally)
-                )
+                    .clickable { page = item }
+                    .padding(16.dp)
+            ) {
+                Text(item, color = Color.White)
             }
         }
     }
 }
 
 @Composable
-fun FeatureCard(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    description: String
-) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = Panel
-        ),
-        shape = RoundedCornerShape(18.dp)
+fun PanelCard(title: String, value: String) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = 12.dp)
+            .background(Panel, RoundedCornerShape(16.dp))
+            .padding(18.dp)
     ) {
-        Row(
-            Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                Modifier
-                    .size(45.dp)
-                    .background(
-                        Brush.linearGradient(
-                            listOf(
-                                Color(0xFF30205B),
-                                Color(0xFF1B1A35)
-                            )
-                        ),
-                        RoundedCornerShape(13.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    icon,
-                    contentDescription = null,
-                    tint = Purple
-                )
-            }
-
-            Spacer(Modifier.width(13.dp))
-
-            Column(
-                verticalArrangement = Arrangement.spacedBy(5.dp)
-            ) {
-                Text(
-                    title,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp
-                )
-
-                Text(
-                    description,
-                    color = Muted,
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp
-                )
-            }
-        }
-    }
-}
-
-fun isWifiConnected(context: Context): Boolean {
-    val manager = context.getSystemService(
-        Context.CONNECTIVITY_SERVICE
-    ) as ConnectivityManager
-
-    val network = manager.activeNetwork ?: return false
-    val capabilities =
-        manager.getNetworkCapabilities(network) ?: return false
-
-    return capabilities.hasTransport(
-        NetworkCapabilities.TRANSPORT_WIFI
-    )
-}
-
-fun readGateway(context: Context): String? {
-    val manager = context.getSystemService(
-        Context.CONNECTIVITY_SERVICE
-    ) as ConnectivityManager
-
-    val network = manager.activeNetwork ?: return null
-    val properties = manager.getLinkProperties(network)
-        ?: return null
-
-    val route = properties.routes.firstOrNull {
-        it.isDefaultRoute && it.gateway is Inet4Address
-    }
-
-    return route?.gateway?.hostAddress
-}
-
-fun openRouter(context: Context, address: String?) {
-    if (address == null) return
-
-    val intent = Intent(
-        Intent.ACTION_VIEW,
-        Uri.parse("http://$address")
-    )
-
-    runCatching {
-        context.startActivity(intent)
+        Text(title, color = Blue, fontSize = 11.sp)
+        Spacer(Modifier.height(8.dp))
+        Text(value, color = Color.White, fontSize = 16.sp)
     }
 }
