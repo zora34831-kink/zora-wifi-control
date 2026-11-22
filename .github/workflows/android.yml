@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Java
@@ -35,7 +35,7 @@ jobs:
           accept-android-sdk-licenses: true
           packages: platform-tools
 
-      - name: Build Debug APK
+      - name: Build APK
         run: gradle --no-daemon assembleDebug
 
       - name: Upload APK
@@ -43,6 +43,4 @@ jobs:
         with:
           name: ZORA-WIFI-CONTROL-APK
           path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-          retention-days: 14
           
