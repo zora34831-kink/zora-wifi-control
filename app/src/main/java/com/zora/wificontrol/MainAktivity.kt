@@ -2,15 +2,18 @@
 package com.zora.wificontrol
 
 import android.content.Context
-import android.net.wifi.WifiManager
+import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -18,11 +21,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import java.net.InetAddress
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.net.HttpURLConnection
+import java.net.URL
 
 private val Dark = Color(0xFF10141D)
 private val Panel = Color(0xFF1B2230)
 private val Blue = Color(0xFF4388FF)
+private const val ROUTER = "192.168.1.1"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -44,27 +52,44 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun ZoraApp(context: Context) {
     var page by remember { mutableStateOf("Dashboard") }
-    var ssid by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var filterEnabled by remember { mutableStateOf(false) }
-    var filterMode by remember { mutableStateOf("Blacklist") }
+    var status by remember { mutableStateOf("Belum diperiksa") }
+    var checking by remember { mutableStateOf(false) }
+    var response by remember { mutableStateOf("Belum ada hasil tes") }
 
-    val gateway = remember {
-        try {
-            val wifi = context.applicationContext
-                .getSystemService(Context.WIFI_SERVICE) as WifiManager
-            val ip = wifi.dhcpInfo.gateway
-            if (ip == 0) "Tidak terdeteksi"
-            else InetAddress.getByAddress(
-                byteArrayOf(
-                    ip.toByte(),
-                    (ip shr 8).toByte(),
-                    (ip shr 16).toByte(),
-                    (ip shr 24).toByte()
-                )
-            ).hostAddress ?: "Tidak terdeteksi"
-        } catch (_: Exception) {
-            "Tidak terdeteksi"
+    val scope = rememberCoroutineScope()
+
+    fun checkRouter() {
+        scope.launch {
+            checking = true
+            status = "Memeriksa router..."
+
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    val connection = URL("http://$ROUTER/")
+                        .openConnection() as HttpURLConnection
+
+                    connection.connectTimeout = 5000
+                    connection.readTimeout = 5000
+                    connection.requestMethod = "GET"
+                    connection.instanceFollowRedirects = false
+
+                    val code = connection.responseCode
+                    connection.disconnect()
+
+                    "Router merespons. HTTP $code"
+                } catch (e: Exception) {
+                    "Gagal terhubung: ${e.javaClass.simpleName}"
+                }
+            }
+
+            response = result
+            status = if (result.startsWith("Router merespons")) {
+                "ONLINE"
+            } else {
+                "Tidak terhubung"
+            }
+
+            checking = false
         }
     }
 
@@ -75,18 +100,14 @@ fun ZoraApp(context: Context) {
             .verticalScroll(rememberScrollState())
             .padding(20.dp)
     ) {
-        Text(
-            "ZORA",
-            color = Color.White,
-            fontSize = 28.sp
-        )
+        Text("ZORA", color = Color.White, fontSize = 30.sp)
         Text(
             "WIFI CONTROL / ZTE F460",
             color = Blue,
             fontSize = 12.sp
         )
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(25.dp))
 
         Text(
             page.uppercase(),
@@ -94,118 +115,81 @@ fun ZoraApp(context: Context) {
             fontSize = 22.sp
         )
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(18.dp))
 
         when (page) {
             "Dashboard" -> {
-                PanelCard("ROUTER GATEWAY", gateway)
-                PanelCard("ROUTER MODEL", "ZTE F460")
-                PanelCard("CONNECTION", "Periksa koneksi WiFi HP")
-                PanelCard("MANAGEMENT", "Panel kontrol router")
+                CardBox("ROUTER ADDRESS", ROUTER)
+                CardBox("ROUTER MODEL", "ZTE F460")
+                CardBox("SOFTWARE VERSION", "V6.0.3P1T1")
+                CardBox("HARDWARE VERSION", "V6.0")
+
+                CardBox("CONNECTION STATUS", status)
+                CardBox("TEST RESULT", response)
+
+                Button(
+                    onClick = { checkRouter() },
+                    enabled = !checking,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        if (checking) "MEMERIKSA..."
+                        else "TEST ROUTER CONNECTION"
+                    )
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        val intent = Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse("http://$ROUTER/")
+                        )
+                        context.startActivity(intent)
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("OPEN ROUTER ADMIN")
+                }
             }
 
             "WiFi Settings" -> {
-                PanelCard("SSID / NAMA WIFI", "Pengaturan nama jaringan")
-
-                OutlinedTextField(
-                    value = ssid,
-                    onValueChange = { ssid = it },
-                    label = { Text("Nama WiFi baru") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text("Password WiFi baru") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                Text(
-                    "Form ini belum mengirim perubahan ke router.",
-                    color = Color.LightGray,
-                    fontSize = 12.sp
+                CardBox(
+                    "WIFI SETTINGS",
+                    "Integrasi pengaturan SSID dan password menunggu verifikasi firmware."
                 )
             }
 
             "MAC Filter" -> {
-                PanelCard("DEVICE ACCESS CONTROL", "Pengaturan filter perangkat")
-
-                Row {
-                    Text(
-                        "Aktifkan MAC Filter",
-                        color = Color.White,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Switch(
-                        checked = filterEnabled,
-                        onCheckedChange = { filterEnabled = it }
-                    )
-                }
-
-                Spacer(Modifier.height(16.dp))
-
-                Text("Mode filter", color = Color.White)
-
-                listOf("Blacklist", "Whitelist").forEach { mode ->
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clickable { filterMode = mode }
-                            .padding(12.dp)
-                    ) {
-                        RadioButton(
-                            selected = filterMode == mode,
-                            onClick = { filterMode = mode }
-                        )
-                        Text(
-                            mode,
-                            color = Color.White,
-                            modifier = Modifier.padding(top = 12.dp)
-                        )
-                    }
-                }
-
-                Text(
-                    "Pengaturan ini masih berupa tampilan. " +
-                    "Belum mengubah konfigurasi router.",
-                    color = Color.LightGray,
-                    fontSize = 12.sp
+                CardBox(
+                    "MAC FILTER",
+                    "Integrasi Blacklist dan Whitelist menunggu verifikasi firmware."
                 )
             }
 
             "Security" -> {
-                PanelCard(
-                    "ROUTER SECURITY",
-                    "Pengaturan keamanan jaringan"
-                )
-                PanelCard(
-                    "MAC FILTER",
-                    "Kelola akses perangkat setelah integrasi tersedia"
+                CardBox(
+                    "SECURITY",
+                    "Pengaturan keamanan router belum diubah oleh aplikasi."
                 )
             }
 
             "Admin" -> {
-                PanelCard(
-                    "ADMIN PANEL",
-                    "Pengaturan aplikasi ZORA WIFI CONTROL"
+                CardBox(
+                    "APPLICATION",
+                    "ZORA WIFI CONTROL"
                 )
-                Text(
-                    "Jangan simpan password router secara langsung " +
-                    "di dalam source code.",
-                    color = Color.LightGray,
-                    fontSize = 13.sp
+                CardBox(
+                    "ROUTER",
+                    "ZTE F460"
                 )
             }
         }
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(25.dp))
 
-        Text("MENU", color = Blue, fontSize = 12.sp)
+        Text("NAVIGATION", color = Blue, fontSize = 12.sp)
 
         listOf(
             "Dashboard",
@@ -224,7 +208,7 @@ fun ZoraApp(context: Context) {
                         RoundedCornerShape(12.dp)
                     )
                     .clickable { page = item }
-                    .padding(16.dp)
+                    .padding(17.dp)
             ) {
                 Text(item, color = Color.White)
             }
@@ -233,16 +217,16 @@ fun ZoraApp(context: Context) {
 }
 
 @Composable
-fun PanelCard(title: String, value: String) {
+fun CardBox(title: String, value: String) {
     Column(
         Modifier
             .fillMaxWidth()
             .padding(bottom = 12.dp)
-            .background(Panel, RoundedCornerShape(16.dp))
-            .padding(18.dp)
+            .background(Panel, RoundedCornerShape(15.dp))
+            .padding(17.dp)
     ) {
         Text(title, color = Blue, fontSize = 11.sp)
         Spacer(Modifier.height(8.dp))
-        Text(value, color = Color.White, fontSize = 16.sp)
+        Text(value, color = Color.White, fontSize = 15.sp)
     }
 }
